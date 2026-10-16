@@ -1,0 +1,59 @@
+---
+services:
+  db:
+    image: vinaikumarp/db:v1
+    deploy:
+      replicas: 1
+    ports:
+      - "3306:3306"
+    networks:
+      - mynetwork
+
+  auth_service:
+    image: vinaikumarp/auth:v1
+    deploy:
+      replicas: 1
+    ports:
+      - "5001:5001"
+    networks:
+      - mynetwork
+    depends_on:
+      - db
+
+  book_service:
+    image: vinaikumarp/book:v1
+    deploy:
+      replicas: 1
+    ports:
+      - "5002:5002"
+    networks:
+      - mynetwork
+    depends_on:
+      - db
+  borrow_service:
+    image: vinaikumarp/borrow:v1
+    deploy:
+      replicas: 1
+    ports:
+      - "5003:5003"
+    networks:
+      - mynetwork
+    depends_on:
+      - db
+
+  frontend:
+    image: vinaikumarp/app:v1
+    deploy:
+      replicas: 1
+    ports:
+      - "5000:5000"
+    networks:
+      - mynetwork
+    depends_on:
+      - auth_service
+      - book_service
+      - borrow_service
+
+networks:
+  mynetwork:
+    driver: overlay

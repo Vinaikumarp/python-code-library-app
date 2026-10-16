@@ -1,0 +1,85 @@
+pipeline {
+    agent {
+        label 'manager'
+    }
+    stages {
+        stage('Code') {
+            steps {
+                git 'https://github.com/Vinaikumarp/python-code-library-app.git'
+            }
+        }
+        stage('Install pysonar') {
+            steps {
+                sh 'pip install pysonar'
+            }
+        }
+        stage('CQA') {
+            steps {
+                withSonarQubeEnv('mysonar') {
+                    sh '''
+                        pysonar \
+                      --sonar-host-url=http://35.77.62.87:9000 \
+                      --sonar-token=sqp_cd323107216a13b26cc551b2d3fe29f355d9bc07 \
+                      --sonar-project-key=myProject
+                    '''
+              }
+            }
+        }
+        stage('Quality Gate') {
+            steps {
+                waitForQualityGate abortPipeline: true, credentialsId: 'sonar'
+            }
+        }
+        
+        stage('Create Images') {
+            steps {
+                sh '''
+                    docker build -t dbimage:v1 database/
+                    docker build -t authimage:v1 auth/
+                    docker build -t bookimage:v1 book/
+                    docker build -t borrowimage:v1 borrow/
+                    docker build -t appimage:v1 .
+                '''
+                sh 'docker images'
+            }
+        }
+        stage('trivy') {
+            steps {
+                sh 'trivy image dbimage:v1 >> db-image.txt'
+                sh 'trivy image authimage:v1 >> auth-image.txt'
+                sh 'trivy image bookimage:v1 >> book-image.txt'
+                sh 'trivy image borrowimage:v1 >> borrow-image.txt'
+                sh 'trivy image appimage:v1 >> app-image.txt'
+            }
+        }
+        stage('Push Image to Docker Hub') {
+            steps {
+                 script {
+                    withDockerRegistry(credentialsId: 'dockerhub') {
+                        sh 'docker tag dbimage:v1 vinaikumarp/db:v1'
+                        sh 'docker tag authimage:v1 vinaikumarp/auth:v1'
+                        sh 'docker tag bookimage:v1 vinaikumarp/book:v1'
+                        sh 'docker tag borrowimage:v1 vinaikumarp/borrow:v1'
+                        sh 'docker tag appimage:v1 vinaikumarp/app:v1'
+                        sh 'docker push vinaikumarp/db:v1'
+                        sh 'docker push vinaikumarp/auth:v1'
+                        sh 'docker push vinaikumarp/book:v1'
+                        sh 'docker push vinaikumarp/borrow:v1'
+                        sh 'docker push vinaikumarp/app:v1'
+                    }
+                }
+            }
+        }
+        stage('Create container using compose') {
+            steps {
+                sh '''
+                    docker run -d --name db -p 3306:3306 --network mynet dbimage:v1
+                    docker run -d --name auth_service --network mynet -p 5001:5001 authimage:v1
+                    docker run -d --name book_service -p 5002:5002 --network mynet bookimage:v1
+                    docker run -d --name borrow_service -p 5003:5003 --network mynet borrowimage:v1
+                    docker run -d --name frontend -p 5000:5000 --network mynet appimage:v1
+                '''
+            }
+        }
+    }
+}
